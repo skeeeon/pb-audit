@@ -3,7 +3,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -23,24 +26,61 @@ const (
 	EventTypeCreateReq    = "create_request"
 	EventTypeUpdateReq    = "update_request"
 	EventTypeDeleteReq    = "delete_request"
+
+	// Schema path
+	DefaultSchemaPath = "pb_schema.json"
 )
 
 func main() {
 	// Initialize PocketBase
 	app := pocketbase.New()
 	
-	// Setup the audit logging system using the OnBootstrap hook
+	// Setup the collections and audit logging system using the OnBootstrap hook
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
 		// IMPORTANT: Wait for bootstrap to complete before accessing the database
 		if err := e.Next(); err != nil {
 			return err
 		}
 
-		// Setup the audit logs collection
-		if err := setupAuditCollection(app); err != nil {
-			log.Printf("Warning: Failed to setup audit logs collection: %v", err)
+		// Determine schema file path - use environment variable if set, otherwise use default
+		schemaPath := os.Getenv("PB_SCHEMA_PATH")
+		if schemaPath == "" {
+			// Use the default path relative to the executable
+			execPath, err := os.Executable()
+			if err != nil {
+				schemaPath = DefaultSchemaPath // Fallback to current directory
+			} else {
+				schemaPath = filepath.Join(filepath.Dir(execPath), DefaultSchemaPath)
+				
+				// If the file doesn't exist at the executable path, try the current directory
+				if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
+					schemaPath = DefaultSchemaPath
+				}
+			}
+		}
+
+		// Check if schema file exists
+		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
+			log.Printf("Warning: Schema file not found at %s, skipping collection setup", schemaPath)
+			
+			// Still setup just the audit logs collection using existing functionality
+			if err := setupAuditCollection(app); err != nil {
+				log.Printf("Warning: Failed to setup audit logs collection: %v", err)
+			} else {
+				log.Println("Audit logging system initialized successfully")
+			}
 		} else {
-			log.Println("Audit logging system initialized successfully")
+			// Initialize collections from schema using PocketBase's built-in import functionality
+			if err := importCollectionsFromFile(app, schemaPath); err != nil {
+				log.Printf("Warning: Failed to import collections from schema: %v", err)
+				
+				// Fallback to just setting up the audit collection
+				if err := setupAuditCollection(app); err != nil {
+					log.Printf("Warning: Failed to setup audit logs collection: %v", err)
+				}
+			} else {
+				log.Println("Collections imported successfully from schema")
+			}
 		}
 
 		// Register standard event hooks
@@ -59,6 +99,32 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// importCollectionsFromFile reads a schema file and imports all collections
+func importCollectionsFromFile(app *pocketbase.PocketBase, schemaPath string) error {
+	// Read the schema file
+	schemaData, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return err
+	}
+
+	// Import collections using PocketBase's built-in functionality
+	// Setting deleteMissing to false to prevent accidental data loss
+	if err := app.ImportCollectionsByMarshaledJSON(schemaData, false); err != nil {
+		return err
+	}
+
+	// Verify that the audit_logs collection exists even after successful import
+	_, err = app.FindCollectionByNameOrId(AuditCollectionName)
+	if err != nil {
+		log.Println("Audit logs collection not found in schema, creating it now...")
+		if err := setupAuditCollection(app); err != nil {
+			return fmt.Errorf("failed to create audit logs collection: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // setupStandardEventHooks registers hooks for standard database operations
