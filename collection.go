@@ -70,7 +70,7 @@ func ensureAuditCollection(app *pocketbase.PocketBase, collectionName string) er
 		Name:     AuditLogFields.RequestIP,
 		Required: false,
 	})
-	
+
 	// Add request_url field
 	collection.Fields.Add(&core.TextField{
 		Name:     AuditLogFields.RequestURL,

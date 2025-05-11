@@ -57,11 +57,11 @@ func (l *logger) logEvent(afterRecord, beforeRecord *core.Record, collectionName
 
 	// Create a new audit log record
 	auditRecord := core.NewRecord(auditCollection)
-	
+
 	// Set basic audit information
 	auditRecord.Set(AuditLogFields.EventType, eventType)
 	auditRecord.Set(AuditLogFields.CollectionName, collectionName)
-	
+
 	// Set record ID from either before or after record
 	var recordId string
 	if afterRecord != nil {
@@ -70,17 +70,17 @@ func (l *logger) logEvent(afterRecord, beforeRecord *core.Record, collectionName
 		recordId = beforeRecord.Id
 	}
 	auditRecord.Set(AuditLogFields.RecordID, recordId)
-	
+
 	// Set timestamp
 	auditRecord.Set(AuditLogFields.Timestamp, time.Now())
-	
+
 	// Apply request information if available
 	if requestInfo != nil {
 		for key, value := range requestInfo {
 			auditRecord.Set(key, value)
 		}
 	}
-	
+
 	// If no user ID is set from request info, try to get it from the records
 	if auditRecord.Get(AuditLogFields.UserID) == nil {
 		if afterRecord != nil {
@@ -116,7 +116,7 @@ func (l *logger) logEvent(afterRecord, beforeRecord *core.Record, collectionName
 			log.Printf("Failed to marshal before record data: %v", err)
 		}
 	}
-	
+
 	// Store after record data if available
 	if afterRecord != nil {
 		afterData := make(map[string]interface{})
@@ -144,7 +144,7 @@ func (l *logger) logEvent(afterRecord, beforeRecord *core.Record, collectionName
 
 	// Log to console if enabled
 	if l.options.LogToConsole {
-		log.Printf("Audit log created for %s event on %s record %s", 
+		log.Printf("Audit log created for %s event on %s record %s",
 			eventType, collectionName, recordId)
 	}
 
