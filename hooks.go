@@ -2,7 +2,6 @@ package pbaudit
 
 import (
 	"log"
-	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -54,50 +53,10 @@ func (l *logger) setupStandardEventHooks() {
 	log.Println("PocketBase audit: Standard event hooks registered")
 }
 
-// extractClientIP extracts the client IP address from request headers
-// This handles multiple common proxy headers with proper fallbacks
-func extractClientIP(reqInfo *core.RequestInfo) string {
-	// Try X-Forwarded-For first (handling case-insensitivity)
-	for key, value := range reqInfo.Headers {
-		if strings.ToLower(key) == "x-forwarded-for" && value != "" {
-			// X-Forwarded-For can contain multiple IPs, use the first one
-			ips := strings.Split(value, ",")
-			if len(ips) > 0 {
-				return strings.TrimSpace(ips[0])
-			}
-		}
-	}
-	
-	// Try X-Real-IP
-	for key, value := range reqInfo.Headers {
-		if strings.ToLower(key) == "x-real-ip" && value != "" {
-			return value
-		}
-	}
-	
-	// Try Cloudflare-specific header
-	for key, value := range reqInfo.Headers {
-		if strings.ToLower(key) == "cf-connecting-ip" && value != "" {
-			return value
-		}
-	}
-	
-	// Try to get the IP from the Host header as a last resort
-	for key, value := range reqInfo.Headers {
-		if strings.ToLower(key) == "host" && value != "" {
-			// Remove port if present
-			host := strings.Split(value, ":")[0]
-			return host
-		}
-	}
-	
-	return "unknown"
-}
-
 // setupRequestEventHooks registers hooks for API request events
 func (l *logger) setupRequestEventHooks() {
 	// Register hooks for record create request events
-	l.app.OnRecordCreateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
+	l.app.OnRecordCreateRequest().BindFunc(func(e *core.RecordCreateEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
@@ -106,17 +65,15 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Use RequestInfo method to get request details
+		// Add the IP directly from the event using RealIP method
+		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		
+		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
 		if err != nil {
 			log.Printf("Failed to get request info: %v", err)
 		} else {
 			requestInfo[AuditLogFields.RequestMethod] = reqInfo.Method
-			
-			// Extract IP using improved function
-			requestInfo[AuditLogFields.RequestIP] = extractClientIP(reqInfo)
-			
-			// Add request context as URL
 			requestInfo[AuditLogFields.RequestURL] = reqInfo.Context
 			
 			// Add authenticated user if available
@@ -135,7 +92,7 @@ func (l *logger) setupRequestEventHooks() {
 	})
 	
 	// Register hooks for record update request events
-	l.app.OnRecordUpdateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
+	l.app.OnRecordUpdateRequest().BindFunc(func(e *core.RecordUpdateEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
@@ -150,17 +107,15 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Use RequestInfo method to get request details
+		// Add the IP directly from the event
+		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		
+		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
 		if err != nil {
 			log.Printf("Failed to get request info: %v", err)
 		} else {
 			requestInfo[AuditLogFields.RequestMethod] = reqInfo.Method
-			
-			// Extract IP using improved function
-			requestInfo[AuditLogFields.RequestIP] = extractClientIP(reqInfo)
-			
-			// Add request context as URL
 			requestInfo[AuditLogFields.RequestURL] = reqInfo.Context
 			
 			// Add authenticated user if available
@@ -179,7 +134,7 @@ func (l *logger) setupRequestEventHooks() {
 	})
 	
 	// Register hooks for record delete request events
-	l.app.OnRecordDeleteRequest().BindFunc(func(e *core.RecordRequestEvent) error {
+	l.app.OnRecordDeleteRequest().BindFunc(func(e *core.RecordDeleteEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
@@ -188,17 +143,15 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Use RequestInfo method to get request details
+		// Add the IP directly from the event
+		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		
+		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
 		if err != nil {
 			log.Printf("Failed to get request info: %v", err)
 		} else {
 			requestInfo[AuditLogFields.RequestMethod] = reqInfo.Method
-			
-			// Extract IP using improved function
-			requestInfo[AuditLogFields.RequestIP] = extractClientIP(reqInfo)
-			
-			// Add request context as URL
 			requestInfo[AuditLogFields.RequestURL] = reqInfo.Context
 			
 			// Add authenticated user if available
@@ -233,17 +186,15 @@ func (l *logger) setupAuthEventHooks() {
 			requestInfo[AuditLogFields.UserID] = e.Record.Id
 		}
 		
-		// Extract request data
+		// Add the IP directly from the event
+		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		
+		// Extract additional request data
 		reqInfo, err := e.RequestInfo()
 		if err != nil {
 			log.Printf("Failed to get request info: %v", err)
 		} else {
 			requestInfo[AuditLogFields.RequestMethod] = reqInfo.Method
-			
-			// Extract IP using improved function
-			requestInfo[AuditLogFields.RequestIP] = extractClientIP(reqInfo)
-			
-			// Add request context as URL
 			requestInfo[AuditLogFields.RequestURL] = reqInfo.Context
 		}
 		
