@@ -1,4 +1,4 @@
-module github.com/yourusername/pbaudit
+module github.com/skeeon/pb-audit
 
 go 1.20
 
