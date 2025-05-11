@@ -17,7 +17,7 @@ A comprehensive audit logging library for [PocketBase](https://pocketbase.io/) a
 ## Installation
 
 ```bash
-go get github.com/yourusername/pbaudit
+go get github.com/skeeeon/pb-audit
 ```
 
 ## Quick Start
@@ -30,7 +30,7 @@ package main
 import (
 	"log"
 	"github.com/pocketbase/pocketbase"
-	"github.com/yourusername/pbaudit"
+	"github.com/skeeeon/pb-audit"
 )
 
 func main() {
