@@ -2,7 +2,6 @@ package pbaudit
 
 import (
 	"log"
-	"reflect"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
