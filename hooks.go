@@ -56,7 +56,7 @@ func (l *logger) setupStandardEventHooks() {
 // setupRequestEventHooks registers hooks for API request events
 func (l *logger) setupRequestEventHooks() {
 	// Register hooks for record create request events
-	l.app.OnRecordCreateRequest().BindFunc(func(e *core.RecordCreateEvent) error {
+	l.app.OnRecordCreateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
@@ -92,7 +92,7 @@ func (l *logger) setupRequestEventHooks() {
 	})
 	
 	// Register hooks for record update request events
-	l.app.OnRecordUpdateRequest().BindFunc(func(e *core.RecordUpdateEvent) error {
+	l.app.OnRecordUpdateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
@@ -134,7 +134,7 @@ func (l *logger) setupRequestEventHooks() {
 	})
 	
 	// Register hooks for record delete request events
-	l.app.OnRecordDeleteRequest().BindFunc(func(e *core.RecordDeleteEvent) error {
+	l.app.OnRecordDeleteRequest().BindFunc(func(e *core.RecordRequestEvent) error {
 		// Skip audit logs collection to prevent recursion
 		if e.Collection.Name == l.options.CollectionName {
 			return e.Next()
