@@ -1,5 +1,4 @@
-// audit_collection.go - Creates the audit_logs collection for PocketBase
-package main
+package pbaudit
 
 import (
 	"log"
@@ -9,17 +8,18 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// setupAuditCollection ensures the audit_logs collection exists
-func setupAuditCollection(app *pocketbase.PocketBase) error {
+// ensureAuditCollection creates the audit_logs collection if it doesn't exist.
+// This is called during Setup() if CreateAuditCollection option is true.
+func ensureAuditCollection(app *pocketbase.PocketBase, collectionName string) error {
 	// Check if collection already exists
-	_, err := app.FindCollectionByNameOrId("audit_logs")
+	_, err := app.FindCollectionByNameOrId(collectionName)
 	if err == nil {
-		log.Println("Audit logs collection already exists")
+		log.Printf("Audit logs collection '%s' already exists", collectionName)
 		return nil
 	}
 
 	// Create new base collection
-	collection := core.NewBaseCollection("audit_logs")
+	collection := core.NewBaseCollection(collectionName)
 
 	// Set security rules to limit access to admins only
 	collection.ListRule = types.Pointer("@request.auth.type = 'admin'")
@@ -30,88 +30,88 @@ func setupAuditCollection(app *pocketbase.PocketBase) error {
 
 	// Add event_type select field with expanded options
 	collection.Fields.Add(&core.SelectField{
-		Name:     "event_type",
+		Name:     AuditLogFields.EventType,
 		Required: true,
-		Values:   []string{"create", "update", "delete", "auth", "create_request", "update_request", "delete_request"},
+		Values:   AllEventTypes,
 	})
 
 	// Add collection_name field
 	collection.Fields.Add(&core.TextField{
-		Name:     "collection_name",
+		Name:     AuditLogFields.CollectionName,
 		Required: true,
 	})
 
 	// Add record_id field
 	collection.Fields.Add(&core.TextField{
-		Name:     "record_id",
+		Name:     AuditLogFields.RecordID,
 		Required: true,
 	})
 
 	// Add user_id field
 	collection.Fields.Add(&core.TextField{
-		Name:     "user_id",
+		Name:     AuditLogFields.UserID,
 		Required: false,
 	})
 
 	// Add auth_method field for auth events
 	collection.Fields.Add(&core.TextField{
-		Name:     "auth_method",
+		Name:     AuditLogFields.AuthMethod,
 		Required: false,
 	})
 
 	// Add request_method field (GET, POST, PUT, DELETE, etc.)
 	collection.Fields.Add(&core.TextField{
-		Name:     "request_method",
+		Name:     AuditLogFields.RequestMethod,
 		Required: false,
 	})
 
 	// Add request_ip field
 	collection.Fields.Add(&core.TextField{
-		Name:     "request_ip",
+		Name:     AuditLogFields.RequestIP,
 		Required: false,
 	})
 	
 	// Add request_url field
 	collection.Fields.Add(&core.TextField{
-		Name:     "request_url",
+		Name:     AuditLogFields.RequestURL,
 		Required: false,
 	})
 
 	// Add timestamp field
 	collection.Fields.Add(&core.DateField{
-		Name:     "timestamp",
+		Name:     AuditLogFields.Timestamp,
 		Required: true,
 	})
 
 	// Add before_changes field (for storing original record data)
 	collection.Fields.Add(&core.TextField{
-		Name:     "before_changes",
+		Name:     AuditLogFields.BeforeChanges,
 		Required: false,
 	})
 
 	// Add after_changes field (for storing updated record data)
 	collection.Fields.Add(&core.TextField{
-		Name:     "after_changes",
+		Name:     AuditLogFields.AfterChanges,
 		Required: false,
 	})
 
 	// Add timestamp fields
 	collection.Fields.Add(&core.AutodateField{
-		Name:     "created",
+		Name:     AuditLogFields.Created,
 		OnCreate: true,
 	})
 	collection.Fields.Add(&core.AutodateField{
-		Name:     "updated",
+		Name:     AuditLogFields.Updated,
 		OnCreate: true,
 		OnUpdate: true,
 	})
 
 	// Create indexes for faster querying
-	collection.AddIndex("idx_audit_collection_name", false, "collection_name", "")
-	collection.AddIndex("idx_audit_record_id", false, "record_id", "")
-	collection.AddIndex("idx_audit_timestamp", false, "timestamp", "")
-	collection.AddIndex("idx_audit_user_id", false, "user_id", "")
-	collection.AddIndex("idx_audit_event_type", false, "event_type", "")
+	collection.AddIndex("idx_audit_collection_name", false, AuditLogFields.CollectionName, "")
+	collection.AddIndex("idx_audit_record_id", false, AuditLogFields.RecordID, "")
+	collection.AddIndex("idx_audit_timestamp", false, AuditLogFields.Timestamp, "")
+	collection.AddIndex("idx_audit_user_id", false, AuditLogFields.UserID, "")
+	collection.AddIndex("idx_audit_event_type", false, AuditLogFields.EventType, "")
 
 	// Save the collection
 	err = app.Save(collection)
@@ -119,6 +119,6 @@ func setupAuditCollection(app *pocketbase.PocketBase) error {
 		return err
 	}
 
-	log.Println("Successfully created audit_logs collection")
+	log.Printf("Successfully created audit logs collection: %s", collectionName)
 	return nil
 }

@@ -1,9 +1,8 @@
-module pb-test
+module github.com/yourusername/pbaudit
 
-go 1.23.4
+go 1.20
 
 require (
-	github.com/labstack/echo v3.3.10+incompatible
 	github.com/pocketbase/pocketbase v0.26.6
 )
 
@@ -19,7 +18,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/labstack/echo/v5 v5.0.0-20230722203903-ec5b858dab61 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
