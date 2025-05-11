@@ -2,6 +2,8 @@ package pbaudit
 
 import (
 	"log"
+	"reflect"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -53,6 +55,63 @@ func (l *logger) setupStandardEventHooks() {
 	log.Println("PocketBase audit: Standard event hooks registered")
 }
 
+// extractIP attempts to extract the client IP using various methods available in PocketBase
+// It attempts multiple approaches for better compatibility across different PocketBase versions
+func extractIP(e interface{}) string {
+	// First try direct RealIP() method if available (type assertion)
+	if reqEvent, ok := e.(interface{ RealIP() string }); ok {
+		return reqEvent.RealIP()
+	}
+	
+	// Try to get RequestInfo
+	var reqInfo *core.RequestInfo
+	var err error
+	
+	// Type assertion to get RequestInfo
+	if hasRequestInfo, ok := e.(interface{ RequestInfo() (*core.RequestInfo, error) }); ok {
+		reqInfo, err = hasRequestInfo.RequestInfo()
+		if err != nil {
+			log.Printf("Failed to get request info: %v", err)
+			return "unknown"
+		}
+	} else {
+		return "unknown"
+	}
+	
+	// Now parse headers from RequestInfo
+	
+	// Try common headers (case insensitive)
+	headerMap := make(map[string]string)
+	for k, v := range reqInfo.Headers {
+		headerMap[strings.ToLower(k)] = v
+	}
+	
+	// Try Cloudflare
+	if cfIP, ok := headerMap["cf-connecting-ip"]; ok && cfIP != "" {
+		return cfIP
+	}
+	
+	// X-Forwarded-For - first IP is usually the client
+	if forwardedFor, ok := headerMap["x-forwarded-for"]; ok && forwardedFor != "" {
+		ips := strings.Split(forwardedFor, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+	
+	// X-Real-IP
+	if realIP, ok := headerMap["x-real-ip"]; ok && realIP != "" {
+		return realIP
+	}
+	
+	// Fly.io
+	if flyIP, ok := headerMap["fly-client-ip"]; ok && flyIP != "" {
+		return flyIP
+	}
+	
+	return "unknown"
+}
+
 // setupRequestEventHooks registers hooks for API request events
 func (l *logger) setupRequestEventHooks() {
 	// Register hooks for record create request events
@@ -65,8 +124,8 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Add the IP directly from the event using RealIP method
-		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		// Use helper function to extract IP
+		requestInfo[AuditLogFields.RequestIP] = extractIP(e)
 		
 		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
@@ -107,8 +166,8 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Add the IP directly from the event
-		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		// Use helper function to extract IP
+		requestInfo[AuditLogFields.RequestIP] = extractIP(e)
 		
 		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
@@ -143,8 +202,8 @@ func (l *logger) setupRequestEventHooks() {
 		// Extract request information
 		requestInfo := make(map[string]interface{})
 		
-		// Add the IP directly from the event
-		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		// Use helper function to extract IP
+		requestInfo[AuditLogFields.RequestIP] = extractIP(e)
 		
 		// Use RequestInfo method to get additional request details
 		reqInfo, err := e.RequestInfo()
@@ -186,8 +245,8 @@ func (l *logger) setupAuthEventHooks() {
 			requestInfo[AuditLogFields.UserID] = e.Record.Id
 		}
 		
-		// Add the IP directly from the event
-		requestInfo[AuditLogFields.RequestIP] = e.RealIP()
+		// Use helper function to extract IP
+		requestInfo[AuditLogFields.RequestIP] = extractIP(e)
 		
 		// Extract additional request data
 		reqInfo, err := e.RequestInfo()
