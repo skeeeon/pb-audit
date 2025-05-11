@@ -82,9 +82,13 @@ func extractClientIP(reqInfo *core.RequestInfo) string {
 		}
 	}
 	
-	// Fall back to RemoteIP if available
-	if reqInfo.RemoteIP != "" {
-		return reqInfo.RemoteIP
+	// Try to get the IP from the Host header as a last resort
+	for key, value := range reqInfo.Headers {
+		if strings.ToLower(key) == "host" && value != "" {
+			// Remove port if present
+			host := strings.Split(value, ":")[0]
+			return host
+		}
 	}
 	
 	return "unknown"
