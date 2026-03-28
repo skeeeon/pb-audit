@@ -2,9 +2,17 @@ package audit
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 )
+
+// RetentionPolicy configures automatic cleanup of old audit logs.
+type RetentionPolicy struct {
+	MaxAge     time.Duration // Delete records older than this duration (0 = disabled)
+	MaxRecords int           // Keep at most this many records (0 = disabled)
+	Interval   string        // Cron expression for cleanup schedule
+}
 
 // Options holds configuration for audit logging setup.
 type Options struct {
@@ -21,6 +29,9 @@ type Options struct {
 	// Return true to log the event, false to skip it
 	// Parameters: collectionName, eventType
 	EventFilter func(collectionName, eventType string) bool
+
+	// Retention policy for automatic cleanup (nil = no cleanup)
+	Retention *RetentionPolicy
 
 	// Logging
 	LogToConsole bool // Enable console logging of audit events (default: true)
@@ -79,12 +90,23 @@ func Initialize(app *pocketbase.PocketBase, options Options) error {
 		return fmt.Errorf("failed to register audit hooks: %w", err)
 	}
 
+	// Register retention policy if configured
+	if options.Retention != nil {
+		if err := registerRetention(app, options); err != nil {
+			return fmt.Errorf("failed to register retention policy: %w", err)
+		}
+	}
+
 	if options.LogToConsole {
 		fmt.Println("✅ SUCCESS PocketBase audit logging initialized successfully")
 		fmt.Printf("ℹ️  INFO   - Collection: %s\n", options.CollectionName)
 		fmt.Printf("ℹ️  INFO   - Log request events: %v\n", options.LogRequestEvents)
 		fmt.Printf("ℹ️  INFO   - Log success events: %v\n", options.LogSuccessEvents)
 		fmt.Printf("ℹ️  INFO   - Log auth events: %v\n", options.LogAuthEvents)
+		if options.Retention != nil {
+			fmt.Printf("ℹ️  INFO   - Retention: maxAge=%v, maxRecords=%d, interval=%s\n",
+				options.Retention.MaxAge, options.Retention.MaxRecords, options.Retention.Interval)
+		}
 	}
 
 	return nil

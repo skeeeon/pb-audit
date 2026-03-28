@@ -30,11 +30,31 @@ package pbaudit
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/skeeeon/pb-audit/internal/audit"
 )
+
+// RetentionPolicy configures automatic cleanup of old audit logs.
+//
+// Both MaxAge and MaxRecords can be used independently or together.
+// When both are set, both constraints are enforced (records must satisfy both).
+// If neither is set, no cleanup is performed.
+//
+// Example:
+//
+//	options.Retention = &pbaudit.RetentionPolicy{
+//	    MaxAge:     90 * 24 * time.Hour, // Delete logs older than 90 days
+//	    MaxRecords: 100000,              // Keep at most 100k records
+//	    Interval:   "0 2 * * *",         // Run cleanup at 2 AM daily
+//	}
+type RetentionPolicy struct {
+	MaxAge     time.Duration // Delete records older than this duration (0 = disabled)
+	MaxRecords int           // Keep at most this many records, oldest deleted first (0 = disabled)
+	Interval   string        // Cron expression for cleanup schedule (default: "0 0 * * *" = daily midnight)
+}
 
 // Options configures the behavior of audit logging.
 type Options struct {
@@ -57,6 +77,9 @@ type Options struct {
 	//       return collectionName == "users" || collectionName == "payments"
 	//   }
 	EventFilter func(collectionName, eventType string) bool
+
+	// Retention policy for automatic cleanup (nil = no cleanup)
+	Retention *RetentionPolicy
 
 	// Logging
 	LogToConsole bool // Enable console logging (default: true)
@@ -132,6 +155,19 @@ func Setup(app *pocketbase.PocketBase, options Options) error {
 		LogAuthEvents:    options.LogAuthEvents,
 		EventFilter:      options.EventFilter,
 		LogToConsole:     options.LogToConsole,
+	}
+
+	// Convert retention policy if set
+	if options.Retention != nil {
+		interval := options.Retention.Interval
+		if interval == "" {
+			interval = "0 0 * * *"
+		}
+		internalOpts.Retention = &audit.RetentionPolicy{
+			MaxAge:     options.Retention.MaxAge,
+			MaxRecords: options.Retention.MaxRecords,
+			Interval:   interval,
+		}
 	}
 
 	// Initialize after app bootstrap

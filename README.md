@@ -13,6 +13,7 @@ A comprehensive, production-ready audit logging library for [PocketBase](https:/
 - 🚀 **Auto-setup**: Creates collection and indexes automatically
 - ⚙️ **Non-destructive**: Preserves your customizations after initial setup
 - 🎯 **Flexible filtering**: Optional custom logic to control what gets logged
+- 🧹 **Retention policies**: Automatic cleanup by age or record count on a cron schedule
 - 📊 **Optimized queries**: Composite indexes for common query patterns
 
 ## Installation
@@ -119,10 +120,42 @@ options.EventFilter = func(collectionName, eventType string) bool {
 // Disable console logging
 options.LogToConsole = false
 
+// Automatic retention policy
+options.Retention = &pbaudit.RetentionPolicy{
+    MaxAge:     90 * 24 * time.Hour, // Delete logs older than 90 days
+    MaxRecords: 100000,              // Keep at most 100k records
+    Interval:   "0 2 * * *",        // Run cleanup at 2 AM daily
+}
+
 if err := pbaudit.Setup(app, options); err != nil {
     log.Fatal(err)
 }
 ```
+
+## Retention Policy
+
+pb-audit can automatically clean up old audit logs on a schedule using PocketBase's built-in cron scheduler. Configure a retention policy to keep your audit collection bounded without external scripts.
+
+```go
+options := pbaudit.DefaultOptions()
+options.Retention = &pbaudit.RetentionPolicy{
+    MaxAge:     30 * 24 * time.Hour, // Delete records older than 30 days
+    MaxRecords: 50000,               // Keep at most 50k records
+    Interval:   "0 0 * * *",        // Run daily at midnight (default)
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `MaxAge` | `time.Duration` | `0` (disabled) | Delete records older than this duration |
+| `MaxRecords` | `int` | `0` (disabled) | Keep at most this many records (oldest deleted first) |
+| `Interval` | `string` | `"0 0 * * *"` | Cron expression for cleanup schedule |
+
+**Behavior:**
+- Both constraints can be used independently or together — when both are set, both are enforced
+- If neither `MaxAge` nor `MaxRecords` is set, no cleanup job is registered
+- Deletion happens in batches to avoid excessive memory usage
+- Cleanup errors are logged but never block the application
 
 ## Audit Logs Collection
 
@@ -327,7 +360,15 @@ Audit logging failures **never block** your application:
 
 ### Cleaning Old Logs
 
-Create a scheduled task to clean up old audit logs:
+The recommended approach is to use the built-in [Retention Policy](#retention-policy):
+
+```go
+options.Retention = &pbaudit.RetentionPolicy{
+    MaxAge: 180 * 24 * time.Hour, // 6 months
+}
+```
+
+Alternatively, you can clean up manually via the API:
 
 ```javascript
 // JavaScript example - run periodically (cron, etc.)
