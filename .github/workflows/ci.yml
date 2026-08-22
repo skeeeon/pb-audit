@@ -1,0 +1,45 @@
+# Ordinary build hygiene on every push and pull request. Modelled on pb-nats's,
+# with one difference: this repo's examples live in the main module, so
+# `go build ./...` already compiles them and no separate step is needed.
+#
+# The gofmt gate is first because it is the cheapest failure to fix and the one
+# most likely to be a surprise -- release.yml does not check formatting, so this
+# is where it is caught.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...

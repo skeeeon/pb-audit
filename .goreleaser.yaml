@@ -1,0 +1,51 @@
+# Release configuration for a library, not a binary.
+#
+# There is nothing here to compile: pb-audit is imported, never run. So every build
+# is skipped and goreleaser is used for the one job it still does -- turning a
+# pushed tag into a GitHub release whose notes come from the commits in it. The
+# reason to use it rather than `gh release create --generate-notes` is
+# uniformity: every repo in this project releases through the same tool with the
+# same changelog filters, and the notes are config in the repo instead of a flag
+# somebody has to remember to pass.
+#
+# What the tag buys, given it produces no artifact: `go get` resolves a version
+# instead of a pseudo-version, consumers pin and upgrade deliberately, and
+# `debug.ReadBuildInfo()` in a consuming binary reports "v0.1.0" rather than
+# "v0.0.0-20260822174619-50fca4306606". The platform's `--version` prints
+# exactly that, which is the second fact any bug report about authorization or
+# credential behaviour needs.
+version: 2
+
+project_name: pb-audit
+
+builds:
+  - skip: true
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+release:
+  github:
+    owner: skeeeon
+    name: pb-audit
+  header: |
+    ## pb-audit {{ .Tag }}
+
+    Audit logging for PocketBase: request and success events with before/after state for every create, update, delete and auth.
+
+    There are no binaries in this release -- it is a Go library:
+
+    ```
+    go get github.com/skeeeon/pb-audit@{{ .Tag }}
+    ```
+  footer: |
+    Pre-1.0: treat a minor version as potentially breaking, and pin what you
+    depend on.
+
+    **Full changelog**: https://github.com/skeeeon/pb-audit/commits/{{ .Tag }}
