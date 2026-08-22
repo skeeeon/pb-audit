@@ -10,14 +10,14 @@ package audit
 // The audit system uses two types of events for complete tracking:
 //
 // 1. REQUEST EVENTS (before commit):
-//    - Capture user intent and request context (IP, user, method, URL)
-//    - Include before state for updates/deletes
-//    - May not complete if validation fails
+//   - Capture user intent and request context (IP, user, method, URL)
+//   - Include before state for updates/deletes
+//   - May not complete if validation fails
 //
 // 2. SUCCESS EVENTS (after commit):
-//    - Confirm operation committed to database
-//    - Include final state after all hooks/validations
-//    - Guarantee operation succeeded
+//   - Confirm operation committed to database
+//   - Include final state after all hooks/validations
+//   - Guarantee operation succeeded
 //
 // This dual approach provides complete audit trail: what was attempted (request)
 // and what actually happened (success).

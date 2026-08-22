@@ -1,0 +1,49 @@
+# Cuts a GitHub release when a v* tag is pushed. No artifacts -- this is a
+# library -- so what the release publishes is the notes and, more importantly,
+# the tag itself: that is what makes `go get` resolve a version instead of a
+# pseudo-version.
+#
+# The verify steps before goreleaser are the point of this file. A binary
+# release fails loudly when the code does not compile; a library release has no
+# artifact whose absence would tell you, so an unbuildable tag publishes happily
+# and only breaks in a consumer's `go build`. A tag is a promise, and these
+# three steps are the only thing checking it.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # goreleaser derives the version and the changelog from tags, and a
+          # shallow clone has neither.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
