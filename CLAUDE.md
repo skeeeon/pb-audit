@@ -33,7 +33,7 @@ The library exposes a single public entry point: `pbaudit.Setup(app, options)` i
 All implementation lives in `internal/audit/`:
 
 - **audit.go** — `Initialize()` orchestrates setup: checks if the audit collection exists, creates it if needed, then registers hooks
-- **collections.go** — `ensureAuditCollection()` creates the `audit_logs` PocketBase collection with schema, indexes, and admin-only API rules (non-destructive: skips if collection already exists)
+- **collections.go** — `ensureAuditCollection()` creates the `audit_logs` PocketBase collection with schema and indexes, leaving all five API rules nil, which PocketBase reads as superusers only (non-destructive: skips if the collection already exists). The rules were `@request.auth.type = 'admin'` until v0.2.1 — PocketBase v0.22 syntax, from before superusers moved into `_superusers`
 - **hooks.go** — `registerHooks()` registers three hook categories on the PocketBase app: request hooks (pre-commit with full request context), success hooks (post-commit confirmation), and auth hooks (login tracking). Helper `extractRequestInfo()` pulls IP/method/URL/user from request events
 - **logger.go** — `logger` type with `logEvent()` that creates audit log records. Contains `shouldLogEvent()` for filtering, `isValidUser()` for user relation validation, `setSnapshot()` for the opt-in value copy, and `extractClientIP()` for proxy-aware IP extraction (CF > X-Forwarded-For > X-Real-IP > Fly-Client-IP)
 - **diff.go** — `changedFields()` compares two `PublicExport()` maps and returns the sorted names of the fields that differ. Pure logic with no PocketBase app required, which is why it carries the library's tests (`diff_test.go`)
@@ -48,6 +48,7 @@ All implementation lives in `internal/audit/`:
 - **`Record.Original()` is the before state on update success**: PocketBase does not refresh a record's original data on save, so the pre-save values survive into the after-success hook. This is what lets a programmatic `app.Save()` produce a diff at all, since no request hook fired for it. It degrades in the safe direction — a record built in memory and saved twice without reloading has an empty `Original()`, so the diff over-reports rather than hiding a change.
 - **Dual-tracking**: Request events capture intent (with before-state); success events confirm commit (with after-state). Both are needed for a complete audit trail.
 - **Non-destructive setup**: Collection is only created on first run; subsequent starts skip schema changes to preserve user customizations.
+- **Widening the audit collection's read rule inherits every snapshotted collection's exposure**: a row carries `before_changes`/`after_changes` for whatever `SnapshotCollections` names, scoped by nothing. Check that list before loosening the rules.
 - **Audit failures never block**: Logging errors are printed to console but don't halt the application. This is why audit hooks live on the After*Success side and must never be used as an enforcement point — enforcement has the opposite requirement.
 - **User field is optional**: Admin/superuser operations result in null user (admins aren't in the users collection).
 - **Record ID empty on create_request**: The record hasn't been saved yet, so no ID exists.

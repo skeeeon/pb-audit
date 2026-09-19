@@ -1,6 +1,6 @@
 # PocketBase Audit Logging (pb-audit)
 
-A comprehensive, production-ready audit logging library for [PocketBase](https://pocketbase.io/) applications. Track all database operations, API requests, and authentication events with complete before/after state tracking.
+A comprehensive, production-ready audit logging library for [PocketBase](https://pocketbase.io/) applications. Track all database operations, API requests, and authentication events — every one recording who acted, when, and which fields changed. Full before/after values are opt-in per collection, so the trail does not quietly become a copy of everything you store.
 
 ## Features
 
@@ -31,22 +31,37 @@ package main
 import (
     "log"
     "github.com/pocketbase/pocketbase"
-    "github.com/skeeeon/pb-audit"
+    pbaudit "github.com/skeeeon/pb-audit"
 )
 
 func main() {
     app := pocketbase.New()
-    
-    // Setup audit logging with default options
-    if err := pbaudit.Setup(app, pbaudit.DefaultOptions()); err != nil {
+
+    options := pbaudit.DefaultOptions()
+
+    // Optional: keep the full before/after values for these collections.
+    // Everything else records only the NAMES of the fields that changed,
+    // which is the default. See "What Gets Recorded" below.
+    options.SnapshotCollections = []string{"products", "orders"}
+
+    if err := pbaudit.Setup(app, options); err != nil {
         log.Fatalf("Failed to setup audit logging: %v", err)
     }
-    
+
     if err := app.Start(); err != nil {
         log.Fatal(err)
     }
 }
 ```
+
+`pbaudit.DefaultOptions()` on its own is a complete setup: you get an event for
+every create, update, delete and login, each naming the fields that moved. Add
+`SnapshotCollections` only where a human needs to read the actual diff.
+
+**Upgrading from v0.1.x:** snapshots used to be unconditional. If you relied on
+`before_changes` / `after_changes`, name those collections in
+`SnapshotCollections` — and see "Why values are opt-in" before naming one that
+holds a credential.
 
 ## Understanding the Dual-Tracking System
 
@@ -205,10 +220,10 @@ The library automatically creates an `audit_logs` collection with these fields:
 **Field Names Always, Values On Request:**
 - See "What gets recorded" below
 
-**Admin-Only Access (Default):**
-- List, view, create, update, delete: admin only
+**Superuser-Only Access (Default):**
+- List, view, create, update, delete: all five rules are nil, which PocketBase reads as superusers only
 - Prevents users from tampering with audit logs
-- Can be customized after initial setup
+- Can be customized after initial setup — see "Custom API Rules" for what widening it actually exposes
 
 ## What Gets Recorded
 
@@ -274,21 +289,32 @@ That over-reports; it never hides a change.
 
 ## Change Tracking Matrix
 
-| Event Type | Before State | After State | Record ID | User | Request Metadata |
-|------------|--------------|-------------|-----------|------|------------------|
-| create_request | ❌ | ✅ | ❌ (not yet saved) | ✅* | ✅ (IP, user, method, URL) |
-| create | ❌ | ✅ | ✅ | ⚠️ | ❌ |
-| update_request | ✅ | ✅ | ✅ | ✅* | ✅ (IP, user, method, URL) |
-| update | ❌ | ✅ | ✅ | ⚠️ | ❌ |
-| delete_request | ✅ | ❌ | ✅ | ✅* | ✅ (IP, user, method, URL) |
-| delete | ✅ | ❌ | ✅ | ⚠️ | ❌ |
-| auth | ❌ | ✅ | ✅ | ✅ | ✅ (IP, method, auth_method) |
+| Event Type | Changed Fields | Before State † | After State † | Record ID | User | Request Metadata |
+|------------|----------------|----------------|---------------|-----------|------|------------------|
+| create_request | ✅ | ❌ | ✅ | ❌ (not yet saved) | ✅* | ✅ (IP, user, method, URL) |
+| create | ✅ | ❌ | ✅ | ✅ | ⚠️ | ❌ |
+| update_request | ✅ | ✅ | ✅ | ✅ | ✅* | ✅ (IP, user, method, URL) |
+| update | ✅ | ✅ | ✅ | ✅ | ⚠️ | ❌ |
+| delete_request | ✅ | ✅ | ❌ | ✅ | ✅* | ✅ (IP, user, method, URL) |
+| delete | ✅ | ✅ | ❌ | ✅ | ⚠️ | ❌ |
+| auth | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (IP, method, auth_method) |
 
 **Legend:**
 - ✅ = Always present
 - ❌ = Not available
 - ⚠️ = May be null (not tracked for success events)
-- ✅* = Present for regular users, null for admin/superuser operations
+- ✅* = Present for regular users, null for superuser operations
+- **†** = Only for collections named in `SnapshotCollections`. A ✅ here means
+  "this state exists for this event", not "it is stored" — with the default
+  (nil) no values are stored for any event.
+
+The `update` success event carries a before state because `Record.Original()`
+survives the save. That matters for programmatic `app.Save()` writes, which
+fire no request hook at all: without it their only event would confirm a commit
+and say nothing about what moved.
+
+Auth events get no `changed_fields` — there is no before state to compare, and
+"every populated field of the user record" is noise rather than a change.
 
 ## Usage Examples
 
@@ -380,7 +406,7 @@ pb-audit follows a **non-destructive philosophy**:
 
 ✅ **First Setup:**
 - Creates `audit_logs` collection
-- Sets default API rules (admin-only)
+- Leaves all five API rules nil (superusers only)
 - Creates indexes
 
 ✅ **Subsequent Starts:**
@@ -484,18 +510,35 @@ const adminOps = await pb.collection('audit_logs').getList(1, 50, {
 
 ### Custom API Rules
 
-After setup, you can modify API rules for your needs:
+The collection is created with all five rules **nil**, which in PocketBase means
+superusers only. That is the right default for a collection that exists to be
+evidence: a trail an actor can edit is not one.
+
+You can widen it afterwards — pb-audit never overwrites your rules — but read
+this first:
 
 ```javascript
-// Example: Allow users to view their own audit logs
+// Example: let users view the audit rows for their own actions.
 // In PocketBase Admin UI → Collections → audit_logs → API Rules:
 
 // List Rule:
-// @request.auth.type = 'admin' || user.id = @request.auth.id
+// @request.auth.id != "" && user = @request.auth.id
 
 // View Rule:
-// @request.auth.type = 'admin' || user.id = @request.auth.id
+// @request.auth.id != "" && user = @request.auth.id
 ```
+
+**A rule that lets someone read an audit row lets them read every value that
+row holds**, including `before_changes` and `after_changes`. Those are
+snapshots of *other* collections, scoped by nothing — so widening this rule
+inherits the read permissions of every collection in `SnapshotCollections` at
+once. Check that list before you widen it, and prefer leaving values off
+entirely if the audit trail is meant to be readable by non-superusers.
+
+Note the rule above is written against the current auth model. Earlier versions
+of this README suggested `@request.auth.type = 'admin'`, which is PocketBase
+v0.22 syntax — superusers moved into their own `_superusers` collection in
+v0.23 and `@request.auth.type` stopped existing.
 
 ## Contributing
 
@@ -516,10 +559,12 @@ constant in the source: a library has no ldflags equivalent, so a hardcoded
 string is one that drifts from the tag and can only mislead. Consumers should
 read the version from `debug.ReadBuildInfo()`, which cannot.
 
-**Unreleased:**
+**v0.2.0:**
 - Added `changed_fields`: every event names the fields that moved
 - Full before/after values are now opt-in per collection via `SnapshotCollections`. **This is a behaviour change** — previously every event stored a full snapshot. Set `SnapshotCollections` to restore the old behaviour for the collections that need it
 - `update` success events now carry a real before state (from `Record.Original()`), so a programmatic `app.Save()` produces a diff rather than only confirming the commit
+- Collection API rules are created nil (superusers only) instead of `@request.auth.type = 'admin'`, which was PocketBase v0.22 syntax
+- Removed the hardcoded `Version` constant
 
 **Changes in 2.x:**
 - Restructured to `internal/audit/` package
