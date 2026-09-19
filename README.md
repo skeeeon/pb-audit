@@ -5,7 +5,8 @@ A comprehensive, production-ready audit logging library for [PocketBase](https:/
 ## Features
 
 - 📝 **Dual-tracking system**: Captures both user intent (requests) and actual results (commits)
-- 🔄 **Complete change history**: Before and after states for all operations
+- 🔄 **Complete change history**: Every event names the fields that changed; full before/after values are opt-in per collection
+- 🔒 **Safe by default**: Values are not copied into the audit log unless you ask for them, so a field left readable for its owner does not become a permanent second copy
 - 👤 **User attribution**: Tracks who performed each action
 - 🌐 **Request metadata**: IP addresses, HTTP methods, URLs, and more
 - 🔐 **Authentication events**: Login tracking with auth method details
@@ -117,6 +118,11 @@ options.EventFilter = func(collectionName, eventType string) bool {
     return false
 }
 
+// Record full before/after VALUES for these collections. Everything else
+// records only changed_fields -- the NAMES of the fields that moved.
+// The default (nil) stores no values at all; see "What gets recorded" below.
+options.SnapshotCollections = []string{"products", "memberships"}
+
 // Disable console logging
 options.LogToConsole = false
 
@@ -172,8 +178,9 @@ The library automatically creates an `audit_logs` collection with these fields:
 | `request_ip` | Text | Client IP address |
 | `request_url` | Text | URL path of the request |
 | `timestamp` | Date | When the event occurred |
-| `before_changes` | JSON | Record state before operation |
-| `after_changes` | JSON | Record state after operation |
+| `changed_fields` | JSON | Names of the fields that differ between the two states. Always recorded |
+| `before_changes` | JSON | Record state before operation. Only for collections in `SnapshotCollections` |
+| `after_changes` | JSON | Record state after operation. Only for collections in `SnapshotCollections` |
 | `created` | Date | Auto-generated creation timestamp |
 | `updated` | Date | Auto-generated update timestamp |
 
@@ -193,11 +200,77 @@ The library automatically creates an `audit_logs` collection with these fields:
 - Structured data instead of text strings
 - Efficient querying and parsing
 - 2MB size limit per field
+- Populated only for collections named in `SnapshotCollections`
+
+**Field Names Always, Values On Request:**
+- See "What gets recorded" below
 
 **Admin-Only Access (Default):**
 - List, view, create, update, delete: admin only
 - Prevents users from tampering with audit logs
 - Can be customized after initial setup
+
+## What Gets Recorded
+
+Every audited event records `changed_fields`: a sorted array naming the fields
+whose value differs between the two states.
+
+```json
+{ "event_type": "update", "collection_name": "api_keys",
+  "record_id": "rt4k9...", "changed_fields": ["rotated_at", "secret"] }
+```
+
+That answers who changed what, and when, without putting the value in the log.
+
+`before_changes` and `after_changes` — the full values — are written only for
+the collections you name in `SnapshotCollections`. **The default is nil, so no
+values are stored anywhere.**
+
+### Why values are opt-in
+
+A snapshot copies every field of a record except the ones the collection marks
+`hidden`. "Not hidden" is not the same question as "safe to keep a permanent
+second copy of": applications routinely leave a credential readable so that the
+identity owning it can fetch it back, and rely on row-level API rules to decide
+who sees which row. The audit collection has no row scoping — it is one flat
+table holding a copy of every record — so a value protected by scoping is not
+protected once it is in here. It also outlives rotation: the credential you
+replaced because it leaked is still sitting in `before_changes`.
+
+Naming the fields keeps the forensic value and leaves the copy out.
+
+### Choosing collections
+
+List the ones whose diffs a human actually reads, and leave out anything
+holding a secret:
+
+```go
+options.SnapshotCollections = []string{"products", "orders", "memberships"}
+```
+
+It is an allowlist rather than a list of fields to redact, deliberately: a deny
+list stops covering a sensitive field the moment someone adds one, and does so
+silently.
+
+### How the diff is computed
+
+- Values are compared as JSON, which is the form they would be stored in.
+- **Absent and zero are the same thing.** A create therefore names the fields
+  that were actually populated rather than every field the collection has.
+  Genuine transitions are unaffected: `"x" → ""` and `true → false` each have a
+  non-empty side.
+- `collectionId`, `collectionName` and `expand` are skipped — they are export
+  envelope, not fields of the record.
+- Auth events get no `changed_fields`; there is no before state to compare.
+- A value that will not serialise is reported as changed rather than assumed
+  equal, so the trail never quietly omits a field.
+
+### One case over-reports
+
+`Original()` is empty for a record built in memory, so code that creates a
+record and saves it *again* without reloading gives the success hook no before
+state, and the diff names every populated field instead of the ones that moved.
+That over-reports; it never hides a change.
 
 ## Change Tracking Matrix
 
@@ -352,7 +425,7 @@ Audit logging failures **never block** your application:
 
 ### Storage Considerations
 
-- Each audit log can store up to 2MB of data per state field
+- Each audit log can store up to 2MB of data per state field, but only for collections in `SnapshotCollections` — by default rows carry field names only, which is far smaller
 - Consider implementing cleanup for old logs
 - Archive or delete logs based on your retention policy
 
@@ -438,9 +511,17 @@ MIT License - see LICENSE file for details.
 
 ## Version
 
-Current version: 2.0.0
+See the git tags for released versions. There is deliberately no version
+constant in the source: a library has no ldflags equivalent, so a hardcoded
+string is one that drifts from the tag and can only mislead. Consumers should
+read the version from `debug.ReadBuildInfo()`, which cannot.
 
-**Changes from 1.x:**
+**Unreleased:**
+- Added `changed_fields`: every event names the fields that moved
+- Full before/after values are now opt-in per collection via `SnapshotCollections`. **This is a behaviour change** — previously every event stored a full snapshot. Set `SnapshotCollections` to restore the old behaviour for the collections that need it
+- `update` success events now carry a real before state (from `Record.Original()`), so a programmatic `app.Save()` produces a diff rather than only confirming the commit
+
+**Changes in 2.x:**
 - Restructured to `internal/audit/` package
 - Changed `user_id` from TextField to RelationField
 - Changed before/after from TextField to JSONField
