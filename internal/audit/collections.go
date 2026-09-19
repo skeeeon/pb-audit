@@ -25,8 +25,9 @@ import (
 // - request_ip: Text field for client IP
 // - request_url: Text field for request path
 // - timestamp: Date field for event time
-// - before_changes: JSON field for record state before operation
-// - after_changes: JSON field for record state after operation
+// - changed_fields: JSON array naming the fields that differ
+// - before_changes: JSON field for record state before operation (opt-in)
+// - after_changes: JSON field for record state after operation (opt-in)
 //
 // PARAMETERS:
 //   - app: PocketBase application instance
@@ -114,13 +115,26 @@ func ensureAuditCollection(app *pocketbase.PocketBase, collectionName string) er
 		Required: true,
 	})
 
-	// Add before_changes JSON field for storing record state before operation
+	// Add changed_fields JSON array naming the fields that moved.
+	//
+	// Written for every record event, whether or not the collection opted into
+	// value snapshots -- it is the part of the trail that is always safe to
+	// keep. See changedFields in diff.go. Small by construction: a list of
+	// field names, never their contents.
+	collection.Fields.Add(&core.JSONField{
+		Name:    AuditLogFields.ChangedFields,
+		MaxSize: 100000,
+	})
+
+	// Add before_changes JSON field for storing record state before operation.
+	// Only populated for collections named in Options.SnapshotCollections.
 	collection.Fields.Add(&core.JSONField{
 		Name:    AuditLogFields.BeforeChanges,
 		MaxSize: 2000000, // 2MB limit
 	})
 
-	// Add after_changes JSON field for storing record state after operation
+	// Add after_changes JSON field for storing record state after operation.
+	// Only populated for collections named in Options.SnapshotCollections.
 	collection.Fields.Add(&core.JSONField{
 		Name:    AuditLogFields.AfterChanges,
 		MaxSize: 2000000, // 2MB limit

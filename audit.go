@@ -78,6 +78,31 @@ type Options struct {
 	//   }
 	EventFilter func(collectionName, eventType string) bool
 
+	// SnapshotCollections names the collections whose before/after VALUES are
+	// written to before_changes and after_changes. Every audited collection
+	// always records changed_fields -- the NAMES of the fields that moved --
+	// whether or not it is listed here.
+	//
+	// The default, nil, stores no values anywhere. That is deliberate. A
+	// snapshot copies every field a record has except the ones the collection
+	// marks hidden, and "not hidden" is not the same question as "safe to keep
+	// a permanent second copy of": an application routinely has to leave a
+	// credential readable so that the identity owning it can fetch it back,
+	// while relying on row-level API rules to decide who sees which row. The
+	// audit collection has no row scoping, so a value that was protected by
+	// scoping is not protected here. Names alone keep the trail useful and the
+	// copy out of it.
+	//
+	// List the collections whose diffs a human actually reads -- inventory,
+	// memberships, settings -- and leave out anything holding a secret:
+	//
+	//   options.SnapshotCollections = []string{"products", "memberships"}
+	//
+	// It is an allowlist rather than a set of fields to redact because a deny
+	// list stops covering a sensitive field the moment someone adds one, and
+	// does so silently.
+	SnapshotCollections []string
+
 	// Retention policy for automatic cleanup (nil = no cleanup)
 	Retention *RetentionPolicy
 
@@ -93,6 +118,7 @@ type Options struct {
 //   - LogSuccessEvents: true (track database operations)
 //   - LogAuthEvents: true (track authentication)
 //   - EventFilter: nil (log all events)
+//   - SnapshotCollections: nil (record changed field names, no values)
 //   - LogToConsole: true (enable logging)
 func DefaultOptions() Options {
 	return Options{
@@ -149,12 +175,13 @@ func Setup(app *pocketbase.PocketBase, options Options) error {
 
 	// Convert public Options to internal Options
 	internalOpts := audit.Options{
-		CollectionName:   options.CollectionName,
-		LogRequestEvents: options.LogRequestEvents,
-		LogSuccessEvents: options.LogSuccessEvents,
-		LogAuthEvents:    options.LogAuthEvents,
-		EventFilter:      options.EventFilter,
-		LogToConsole:     options.LogToConsole,
+		CollectionName:      options.CollectionName,
+		LogRequestEvents:    options.LogRequestEvents,
+		LogSuccessEvents:    options.LogSuccessEvents,
+		LogAuthEvents:       options.LogAuthEvents,
+		EventFilter:         options.EventFilter,
+		SnapshotCollections: options.SnapshotCollections,
+		LogToConsole:        options.LogToConsole,
 	}
 
 	// Convert retention policy if set
@@ -215,6 +242,3 @@ func validateOptions(options Options) error {
 
 	return nil
 }
-
-// Version is the library version.
-const Version = "2.0.0"

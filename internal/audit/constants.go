@@ -61,8 +61,9 @@ var AllEventTypes = []string{
 //   - request_ip: Client IP address (with reverse proxy support)
 //   - request_url: URL path of the request
 //   - timestamp: When the event occurred
-//   - before_changes: JSON snapshot of record before operation
-//   - after_changes: JSON snapshot of record after operation
+//   - changed_fields: JSON array naming the fields that differ
+//   - before_changes: JSON snapshot of record before operation (opt-in)
+//   - after_changes: JSON snapshot of record after operation (opt-in)
 //   - created: Auto-generated creation timestamp
 //   - updated: Auto-generated update timestamp
 var AuditLogFields = struct {
@@ -75,6 +76,7 @@ var AuditLogFields = struct {
 	RequestIP      string
 	RequestURL     string
 	Timestamp      string
+	ChangedFields  string
 	BeforeChanges  string
 	AfterChanges   string
 	Created        string
@@ -89,6 +91,7 @@ var AuditLogFields = struct {
 	RequestIP:      "request_ip",
 	RequestURL:     "request_url",
 	Timestamp:      "timestamp",
+	ChangedFields:  "changed_fields",
 	BeforeChanges:  "before_changes",
 	AfterChanges:   "after_changes",
 	Created:        "created",

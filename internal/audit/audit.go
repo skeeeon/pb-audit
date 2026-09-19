@@ -30,6 +30,10 @@ type Options struct {
 	// Parameters: collectionName, eventType
 	EventFilter func(collectionName, eventType string) bool
 
+	// SnapshotCollections names the collections whose before/after VALUES are
+	// recorded. Everything else records changed_fields only.
+	SnapshotCollections []string
+
 	// Retention policy for automatic cleanup (nil = no cleanup)
 	Retention *RetentionPolicy
 

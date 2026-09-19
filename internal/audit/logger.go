@@ -14,13 +14,23 @@ import (
 type logger struct {
 	app     *pocketbase.PocketBase
 	options Options
+
+	// snapshot is Options.SnapshotCollections as a set. Built once here rather
+	// than scanned per event: this is consulted on every audited write.
+	snapshot map[string]bool
 }
 
 // newLogger creates a new audit logger instance.
 func newLogger(app *pocketbase.PocketBase, options Options) *logger {
+	snapshot := make(map[string]bool, len(options.SnapshotCollections))
+	for _, name := range options.SnapshotCollections {
+		snapshot[name] = true
+	}
+
 	return &logger{
-		app:     app,
-		options: options,
+		app:      app,
+		options:  options,
+		snapshot: snapshot,
 	}
 }
 
@@ -128,27 +138,29 @@ func (l *logger) logEvent(
 		}
 	}
 
-	// Store before state if available
-	if beforeRecord != nil {
-		beforeJSON, err := json.Marshal(beforeRecord)
-		if err != nil {
-			if l.options.LogToConsole {
-				fmt.Printf("⚠️  WARNING Failed to marshal before state: %v\n", err)
-			}
-		} else {
-			auditRecord.Set(AuditLogFields.BeforeChanges, beforeJSON)
-		}
+	// The two states as PocketBase itself would serialise them. Record.MarshalJSON
+	// is json.Marshal(record.PublicExport()), so exporting once here and marshalling
+	// the map below stores byte-identical JSON to what this used to write, while
+	// also giving the field diff something to compare.
+	before := publicExport(beforeRecord)
+	after := publicExport(afterRecord)
+
+	// Which fields moved. Recorded for every record event, whether or not the
+	// collection stores values -- this is the part that is always safe to keep.
+	// Skipped for auth events, where there is no before state and "every
+	// populated field of the user record" is noise rather than a change.
+	if eventType != EventTypeAuth {
+		auditRecord.Set(AuditLogFields.ChangedFields, changedFields(before, after))
 	}
 
-	// Store after state if available
-	if afterRecord != nil {
-		afterJSON, err := json.Marshal(afterRecord)
-		if err != nil {
-			if l.options.LogToConsole {
-				fmt.Printf("⚠️  WARNING Failed to marshal after state: %v\n", err)
-			}
-		} else {
-			auditRecord.Set(AuditLogFields.AfterChanges, afterJSON)
+	// Values, only for collections that opted in. See changedFields for why
+	// this is an allowlist and why the default is names only.
+	if l.snapshot[collectionName] {
+		if before != nil {
+			l.setSnapshot(auditRecord, AuditLogFields.BeforeChanges, before, "before")
+		}
+		if after != nil {
+			l.setSnapshot(auditRecord, AuditLogFields.AfterChanges, after, "after")
 		}
 	}
 
@@ -166,6 +178,34 @@ func (l *logger) logEvent(
 	}
 
 	return nil
+}
+
+// publicExport returns the record as the map PocketBase would serialise, or nil
+// when there is no record for that side of the event.
+//
+// Hidden fields are already excluded by PublicExport, along with password and
+// tokenKey on auth collections. Everything else the application chose not to
+// hide is in here -- which is precisely why the values are not stored by
+// default. See changedFields.
+func publicExport(record *core.Record) map[string]any {
+	if record == nil {
+		return nil
+	}
+	return record.PublicExport()
+}
+
+// setSnapshot marshals one state into the audit record, logging rather than
+// failing if it will not serialise. Audit logging never blocks the operation it
+// is describing.
+func (l *logger) setSnapshot(auditRecord *core.Record, field string, state map[string]any, label string) {
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		if l.options.LogToConsole {
+			fmt.Printf("⚠️  WARNING Failed to marshal %s state: %v\n", label, err)
+		}
+		return
+	}
+	auditRecord.Set(field, encoded)
 }
 
 // isValidUser checks if a user ID exists in the users collection.
