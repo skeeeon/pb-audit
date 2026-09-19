@@ -5,7 +5,6 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // ensureAuditCollection creates the audit logs collection if it doesn't exist.
@@ -163,13 +162,21 @@ func ensureAuditCollection(app *pocketbase.PocketBase, collectionName string) er
 		fmt.Sprintf("CREATE INDEX idx_audit_user_timestamp ON %s (%s, %s)", collectionName, AuditLogFields.User, AuditLogFields.Timestamp),
 	}
 
-	// Set API rules for admin-only access (only on initial creation)
-	// Users can modify these rules after setup without pb-audit overwriting them
-	collection.ListRule = types.Pointer("@request.auth.type = 'admin'")
-	collection.ViewRule = types.Pointer("@request.auth.type = 'admin'")
-	collection.CreateRule = types.Pointer("@request.auth.type = 'admin'")
-	collection.UpdateRule = types.Pointer("@request.auth.type = 'admin'")
-	collection.DeleteRule = types.Pointer("@request.auth.type = 'admin'")
+	// API rules are left nil, which in PocketBase means superusers only. Set
+	// only on initial creation; you can change them afterwards without pb-audit
+	// overwriting them.
+	//
+	// These used to be `@request.auth.type = 'admin'`, which is PocketBase
+	// v0.22 syntax: superusers moved into their own `_superusers` auth
+	// collection in v0.23 and `@request.auth.type` stopped existing. A nil rule
+	// says the same thing, says it in the form the framework itself uses, and
+	// cannot go stale the next time the auth model moves.
+	//
+	// Superuser-only is the right default for a collection that exists to be
+	// evidence: an audit trail an actor can edit is not one, and the rows carry
+	// whatever the audited collections carry. Widen it deliberately, and read
+	// the note on SnapshotCollections first -- a rule that lets someone read
+	// their own audit rows also lets them read every value those rows hold.
 
 	// Save the collection
 	if err := app.Save(collection); err != nil {
