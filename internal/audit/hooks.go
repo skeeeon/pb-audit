@@ -182,9 +182,22 @@ func registerSuccessHooks(app *pocketbase.PocketBase, logger *logger) error {
 			return e.Next()
 		}
 
-		// For update success events, we don't have easy access to before state
-		// The request hook already captured it, this confirms the commit
-		if err := logger.logEvent(e.Record, nil, collectionName, EventTypeUpdate, nil); err != nil {
+		// Record.Original() is the pre-save state: PocketBase does not refresh a
+		// record's original data on save, so the values loaded before the write
+		// survive into the after-success hook. That is what lets this event
+		// carry a diff rather than only confirming the commit -- which matters
+		// because the success hooks are the ONLY ones that fire for a
+		// programmatic app.Save(), where no request hook captured a before
+		// state earlier.
+		//
+		// ONE CASE DEGRADES, IN THE SAFE DIRECTION. Original() is populated
+		// when a record is loaded from the database, and empty for one built in
+		// memory -- so code that creates a record and then saves it AGAIN
+		// without reloading (a library filling in a generated field, say) gives
+		// this hook an empty before state, and the diff names every populated
+		// field rather than the two that moved. That over-reports; it never
+		// hides a change, which is the direction an audit trail should fail in.
+		if err := logger.logEvent(e.Record, e.Record.Original(), collectionName, EventTypeUpdate, nil); err != nil {
 			if logger.options.LogToConsole {
 				fmt.Printf("⚠️  WARNING Failed to log update success: %v\n", err)
 			}
