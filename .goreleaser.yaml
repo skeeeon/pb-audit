@@ -37,7 +37,7 @@ release:
   header: |
     ## pb-audit {{ .Tag }}
 
-    Audit logging for PocketBase: request and success events with before/after state for every create, update, delete and auth.
+    Audit logging for PocketBase: request and success events for every create, update, delete and auth, each naming the fields that changed. Full before/after values are opt-in per collection.
 
     There are no binaries in this release -- it is a Go library:
 
